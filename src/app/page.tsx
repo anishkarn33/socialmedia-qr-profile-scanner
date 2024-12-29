@@ -1,9 +1,9 @@
-import InstagramQRTool from './components/InstagramQRTool'
+import AdvancedQRGenerator from './components/AdvanceQRGenerator'
 
 export default function Home() {
   return (
-    <main>
-      <InstagramQRTool />
+    <main className="flex min-h-screen flex-col items-center justify-center p-24">
+      <AdvancedQRGenerator />
     </main>
   )
 }

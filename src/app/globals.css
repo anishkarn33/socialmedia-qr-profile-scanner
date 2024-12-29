@@ -70,3 +70,19 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes scan {
+  0% {
+    top: -5%;
+  }
+  50% {
+    top: 105%;
+  }
+  100% {
+    top: -5%;
+  }
+}
+
+.animate-scan {
+  animation: scan 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}

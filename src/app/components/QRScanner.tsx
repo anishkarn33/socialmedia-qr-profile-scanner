@@ -1,116 +1,132 @@
 'use client'
 
-import React, { useEffect, useRef, useState } from 'react'
-import { Html5Qrcode } from 'html5-qrcode'
-import { useRouter } from 'next/navigation'
+import React, { useState, useRef, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ExternalLink } from 'lucide-react'
+import jsQR from 'jsqr'
+import Link from 'next/link'
 
-interface InstagramQRScannerProps {
-  onBackClick: () => void;
+interface QRScannerProps {
+  onScanComplete: (result: string) => void;
 }
 
-const InstagramQRScanner: React.FC<InstagramQRScannerProps> = ({ onBackClick }) => {
-  const [data, setData] = useState<string | null>(null)
+const QRScanner: React.FC<QRScannerProps> = ({ onScanComplete }) => {
   const [scanning, setScanning] = useState(false)
+  const [scannedResult, setScannedResult] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const scannerRef = useRef<Html5Qrcode | null>(null)
-  const router = useRouter()
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
-    scannerRef.current = new Html5Qrcode('reader')
+    let animationFrameId: number
+
+    const scan = () => {
+      if (videoRef.current && canvasRef.current) {
+        const video = videoRef.current
+        const canvas = canvasRef.current
+        const context = canvas.getContext('2d')
+
+        if (context) {
+          canvas.width = video.videoWidth
+          canvas.height = video.videoHeight
+
+          context.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+          const code = jsQR(imageData.data, imageData.width, imageData.height)
+
+          if (code) {
+            setScanning(false)
+            setTimeout(() => {
+              setScannedResult(code.data)
+              onScanComplete(code.data)
+            }, 2000)
+            return
+          }
+        }
+      }
+
+      animationFrameId = requestAnimationFrame(scan)
+    }
+
+    if (scanning) {
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then((stream) => {
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream
+            videoRef.current.play()
+            animationFrameId = requestAnimationFrame(scan)
+          }
+        })
+        .catch((err) => {
+          console.error('Error accessing camera:', err)
+          setError('Failed to access camera. Please make sure you have given permission.')
+        })
+    } else if (videoRef.current?.srcObject) {
+      const tracks = (videoRef.current.srcObject as MediaStream).getTracks()
+      tracks.forEach(track => track.stop())
+    }
 
     return () => {
-      if (scannerRef.current && scanning) {
-        scannerRef.current.stop().catch(error => console.error('Failed to stop scanner:', error))
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId)
+      }
+      if (videoRef.current?.srcObject) {
+        const tracks = (videoRef.current.srcObject as MediaStream).getTracks()
+        tracks.forEach(track => track.stop())
       }
     }
-  }, [scanning])
+  }, [scanning, onScanComplete])
 
-  const handleScan = (decodedText: string) => {
-    setData(decodedText)
-    if (decodedText.startsWith('https://www.instagram.com/')) {
-      router.push(decodedText)
-    }
-    stopScanner()
-  }
-
-  const startScanner = () => {
+  const startScanning = () => {
+    setScanning(true)
+    setScannedResult(null)
     setError(null)
-    if (scannerRef.current) {
-      scannerRef.current
-        .start(
-          { facingMode: 'environment' },
-          { fps: 10, qrbox: { width: 250, height: 250 } },
-          handleScan,
-          (errorMessage: string) => {
-            console.error('QR Code scanning failed:', errorMessage)
-          }
-        )
-        .then(() => setScanning(true))
-        .catch((err: Error) => {
-          console.error('Failed to start scanner:', err)
-          setError('Camera access denied. Please enable camera permissions and try again.')
-        })
-    }
-  }
-
-  const stopScanner = () => {
-    if (scannerRef.current) {
-      scannerRef.current
-        .stop()
-        .then(() => setScanning(false))
-        .catch((err: Error) => {
-          console.error('Failed to stop scanner:', err)
-        })
-    }
   }
 
   return (
-    <div className="w-full max-w-md p-6 bg-white rounded-lg shadow-md">
-      <h2 className="mb-6 text-2xl font-bold text-center text-purple-600">Instagram QR Scanner</h2>
+    <div className="space-y-4">
+      <div className="relative">
+        <video ref={videoRef} className="w-full" style={{ display: scanning ? 'block' : 'none' }} />
+        <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" style={{ display: scanning ? 'block' : 'none' }} />
+        {scanning && (
+          <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center">
+            <div className="w-48 h-48 border-4 border-blue-500 animate-pulse" />
+          </div>
+        )}
+      </div>
+      {!scanning && !scannedResult && (
+        <Button onClick={startScanning} className="w-full">
+          Start Scanning
+        </Button>
+      )}
+      {scannedResult && (
+        <Alert variant="default">
+          <CheckCircle2 className="h-4 w-4" />
+          <AlertTitle>Success</AlertTitle>
+          <AlertDescription>
+            <p>Scanned QR Code:</p>
+            <Link href={scannedResult} className="text-blue-600 hover:underline break-all">
+              {scannedResult}
+            </Link>
+            <Button asChild className="w-full mt-2">
+              <Link href={scannedResult} target="_blank" rel="noopener noreferrer">
+                Visit Profile <ExternalLink className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
       {error && (
-        <Alert variant="destructive" className="mb-4">
+        <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Error</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <div id="reader" className="mb-4 w-full"></div>
-      <div className="flex justify-center space-x-4 mb-4">
-        {!scanning ? (
-          <Button onClick={startScanner} className="w-full">
-            Start Scanning
-          </Button>
-        ) : (
-          <Button onClick={stopScanner} variant="destructive" className="w-full">
-            Stop Scanning
-          </Button>
-        )}
-      </div>
-      {data && (
-        <div className="p-4 mt-4 text-center bg-gray-200 rounded">
-          <p className="font-semibold">Scanned Result:</p>
-          <p className="break-all">{data}</p>
-        </div>
-      )}
-      <Button onClick={onBackClick} variant="outline" className="w-full mt-4">
-        Back to Generator
-      </Button>
-      <div className="mt-4 text-sm text-gray-600">
-        <p>Note: You may need to grant camera permissions to use the QR scanner.</p>
-        <p>If you are having trouble, try the following:</p>
-        <ul className="list-disc list-inside mt-2">
-          <li>Ensure your browser supports camera access</li>
-          <li>Check your browser settings and allow camera access for this site</li>
-          <li>If using an iOS device, ensure you are using Safari</li>
-          <li>Try refreshing the page and granting permissions when prompted</li>
-        </ul>
-      </div>
     </div>
   )
 }
 
-export default InstagramQRScanner
+export default QRScanner
 
